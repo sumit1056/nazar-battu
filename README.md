@@ -37,6 +37,9 @@ Click the link below to download the single standalone executable. Double-click 
 Prefer a standard Windows setup with Start Menu and Desktop shortcuts?  
 👉 **[Download Nazar-Battu-Setup.exe](https://github.com/sumit1056/nazar-battu/releases/latest/download/Nazar-Battu-Setup.exe)**
 
+> [!NOTE]
+> **Windows SmartScreen Note**: Because Nazar Battu is a free open-source project without an expensive corporate code-signing certificate, Windows Defender may show an *"unrecognized app"* screen on first launch. Simply click **"More info"** ➔ **"Run anyway"** to start!
+
 ---
 
 ## 💡 The Story Behind the Product
