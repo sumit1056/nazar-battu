@@ -1,8 +1,8 @@
 /**
  * Nazar Battu — usePhysics Hook (Verlet Integration Engine)
  *
- * React hook managing the 12-particle Verlet rope physics simulation.
- * Replaces rigid-body constraints with pure particle Verlet integration:
+ * React hook managing the 12-particle Verlet rope physics simulation:
+ * - Position lane support: Left / Center / Right (Right is default).
  * - 0.98 air damping for silky, non-elastic pendulum oscillation.
  * - Full-cord cursor repulsion: intermediate nodes physically curve away from cursor.
  * - Wind velocity momentum injection from rapid cursor sweeps.
@@ -12,6 +12,7 @@
 
 import { useRef, useEffect, useCallback } from 'react';
 import { VerletRope } from '../physics/verlet';
+import { useStore, getAnchorXForLane } from '../store/useStore';
 
 interface UsePhysicsOptions {
   /** Active charm ID */
@@ -36,15 +37,16 @@ export function usePhysics({
   enabled,
 }: UsePhysicsOptions): UsePhysicsReturn {
   const verletRopeRef = useRef<VerletRope | null>(null);
+  const positionLane = useStore((s) => s.positionLane);
 
   useEffect(() => {
     if (!enabled) return;
 
-    const anchorX = typeof window !== 'undefined' ? window.innerWidth / 2 : 500;
+    const initialAnchorX = getAnchorXForLane(positionLane, window.innerWidth);
     const rope = new VerletRope({
       pointCount: 12,
       segmentLength: 15.5,
-      anchorX,
+      anchorX: initialAnchorX,
       anchorY: 0,
     });
 
@@ -54,7 +56,7 @@ export function usePhysics({
 
     const handleResize = (): void => {
       if (verletRopeRef.current) {
-        verletRopeRef.current.anchorX = window.innerWidth / 2;
+        verletRopeRef.current.anchorX = getAnchorXForLane(positionLane, window.innerWidth);
       }
     };
     window.addEventListener('resize', handleResize);
@@ -63,7 +65,7 @@ export function usePhysics({
       window.removeEventListener('resize', handleResize);
       verletRopeRef.current = null;
     };
-  }, [charmId, enabled]);
+  }, [charmId, enabled, positionLane]);
 
   /** Step simulation forward by 1 frame (1/60s) */
   const stepPhysics = useCallback((dt = 1 / 60) => {
@@ -75,10 +77,10 @@ export function usePhysics({
   /** Emergency or tray command to re-center the talisman */
   const resetCharmPosition = useCallback(() => {
     if (verletRopeRef.current) {
-      const anchorX = window.innerWidth / 2;
-      verletRopeRef.current.reset(anchorX, 0);
+      const targetAnchorX = getAnchorXForLane(positionLane, window.innerWidth);
+      verletRopeRef.current.reset(targetAnchorX, 0);
     }
-  }, []);
+  }, [positionLane]);
 
   return {
     verletRopeRef,

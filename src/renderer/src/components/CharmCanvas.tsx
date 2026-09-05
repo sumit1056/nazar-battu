@@ -26,6 +26,7 @@ export function CharmCanvas(): JSX.Element {
   const isVisible = useStore((s) => s.isVisible);
   const audioEnabled = useStore((s) => s.audioEnabled);
   const setInteractionState = useStore((s) => s.setInteractionState);
+  const setMenuOpen = useStore((s) => s.setMenuOpen);
 
   // Get active charm definition
   const charm = getCharm(activeCharmId);
@@ -310,16 +311,26 @@ export function CharmCanvas(): JSX.Element {
       }
     };
 
+    const handleContextMenu = (e: MouseEvent): void => {
+      e.preventDefault();
+      const hitState = getState();
+      if (hitState.isInside || hitState.isDragging) {
+        setMenuOpen(true);
+      }
+    };
+
     canvas.addEventListener('mousemove', handleMouseMove);
     canvas.addEventListener('mousedown', handleMouseDown);
     canvas.addEventListener('mouseup', handleMouseUp);
     canvas.addEventListener('dblclick', handleDoubleClick);
+    canvas.addEventListener('contextmenu', handleContextMenu);
 
     return () => {
       canvas.removeEventListener('mousemove', handleMouseMove);
       canvas.removeEventListener('mousedown', handleMouseDown);
       canvas.removeEventListener('mouseup', handleMouseUp);
       canvas.removeEventListener('dblclick', handleDoubleClick);
+      canvas.removeEventListener('contextmenu', handleContextMenu);
     };
   }, [isVisible, charm, audioEnabled, startDrag, endDrag, getState, setInteractionState, verletRopeRef, resetCharmPosition]);
 

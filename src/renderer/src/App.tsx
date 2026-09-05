@@ -7,6 +7,7 @@
 
 import { useEffect, type JSX } from 'react';
 import { CharmCanvas } from './components/CharmCanvas';
+import { CharmMenu } from './components/CharmMenu';
 import { useStore } from './store/useStore';
 
 export default function App(): JSX.Element {
@@ -45,5 +46,10 @@ export default function App(): JSX.Element {
     };
   }, [toggleVisibility, setActiveCharm, setAudioEnabled]);
 
-  return <CharmCanvas />;
+  return (
+    <>
+      <CharmCanvas />
+      <CharmMenu />
+    </>
+  );
 }
