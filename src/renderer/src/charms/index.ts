@@ -9,6 +9,7 @@ import type { CharmDefinition } from './types';
 import { nimbuMirchiCharm } from './nimbu-mirchi';
 import { evilEyeCharm } from './evil-eye';
 import { mahakalMaskCharm } from './mahakal-mask';
+import { ghantaCharm } from './ghanta';
 
 /** All registered charms, keyed by ID */
 const charmRegistry = new Map<string, CharmDefinition>();
@@ -17,6 +18,7 @@ const charmRegistry = new Map<string, CharmDefinition>();
 charmRegistry.set(nimbuMirchiCharm.id, nimbuMirchiCharm);
 charmRegistry.set(evilEyeCharm.id, evilEyeCharm);
 charmRegistry.set(mahakalMaskCharm.id, mahakalMaskCharm);
+charmRegistry.set(ghantaCharm.id, ghantaCharm);
 
 /** Get a charm definition by ID */
 export function getCharm(id: string): CharmDefinition | undefined {

@@ -97,6 +97,23 @@ export function CharmCanvas(): JSX.Element {
         ctx.lineWidth = 0.8;
         ctx.setLineDash([2, 4]);
         ctx.stroke();
+      } else if (activeCharmId === 'ghanta') {
+        // Temple brass bell: sacred red cord with radiant gold stitching
+        traceRopePath();
+        ctx.strokeStyle = '#880e4f';
+        ctx.lineWidth = 2.4;
+        ctx.stroke();
+
+        traceRopePath();
+        ctx.strokeStyle = '#e65100';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        traceRopePath();
+        ctx.strokeStyle = '#ffd54f';
+        ctx.lineWidth = 0.8;
+        ctx.setLineDash([2, 5]);
+        ctx.stroke();
       } else {
         // Evil eye: braided steel cord
         traceRopePath();
@@ -253,7 +270,7 @@ export function CharmCanvas(): JSX.Element {
         canvas.style.cursor = 'grabbing';
         verlet.startDrag(e.clientX, e.clientY);
         if (audioEnabled) {
-          playChime(0.25);
+          playChime(activeCharmId, 0.25);
         }
       }
     };

@@ -210,6 +210,7 @@ function updateTrayMenu(): void {
     { id: 'nimbu-mirchi', label: '🍋 Nimbu-Mirchi (Lemon & Chilies)' },
     { id: 'evil-eye', label: '🧿 Evil Eye (Nazar Boncuğu)' },
     { id: 'mahakal-mask', label: '👹 Mahakal Demon Mask' },
+    { id: 'ghanta', label: '🔔 Ghanta (Temple Bell)' },
   ];
 
   const contextMenu = Menu.buildFromTemplate([

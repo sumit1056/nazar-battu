@@ -1,13 +1,21 @@
 /**
- * Nazar Battu — Evil Eye Charm (Nazar Boncuğu)
+ * Nazar Battu — Authentic Evil Eye Charm (Nazar Boncuğu)
  *
- * Traditional Turkish / Mediterranean blue glass talisman.
- * Handcrafted look with rich concentric circles:
- * Deep Cobalt Blue → White → Vibrant Cyan → Obsidian Pupil + Glass Specular Glints.
- * Top features a silver mounting ring and decorative blue bead.
+ * Authentic Mediterranean cobalt blue glass talisman:
+ * - Upper cord threaded with pearl white glass and concentric evil eye beads.
+ * - High-resolution handcrafted cobalt glass talisman with subtle translucency.
+ * - Suspended on a braided steel cord with natural pendulum motion.
  */
 
 import type { CharmDefinition, CharmRenderContext } from './types';
+import { getRopeInterpolation } from '../physics/rope';
+import { drawWhiteBead, drawEyeBead } from './beads';
+import nazarImgUrl from '../assets/charms/nazar.png';
+
+const nazarImg = typeof Image !== 'undefined' ? new Image() : null;
+if (nazarImg) {
+  nazarImg.src = nazarImgUrl;
+}
 
 export const evilEyeCharm: CharmDefinition = {
   id: 'evil-eye',
@@ -15,106 +23,62 @@ export const evilEyeCharm: CharmDefinition = {
   description: 'Ancient cobalt blue glass talisman with protective concentric rings',
 
   bodyShape: 'circle',
-  bodyDimensions: { width: 64, height: 64 },
+  bodyDimensions: { width: 68, height: 68 },
   mass: 6,
-  ropeAttachOffset: { x: 0, y: -34 },
+  ropeAttachOffset: { x: 0, y: -24 },
 
-  hitAreaPadding: 16,
+  hitAreaPadding: 22,
 
-  render({ ctx, position, angle }: CharmRenderContext): void {
+  render({ ctx, position, angle, ropePoints }: CharmRenderContext): void {
+    const hasRope = Boolean(ropePoints && ropePoints.length >= 2);
+
+    // 1. Draw decorative pearl and eye beads along the cord
+    if (hasRope && ropePoints) {
+      const b1 = getRopeInterpolation(ropePoints, 0.40);
+      const b2 = getRopeInterpolation(ropePoints, 0.60);
+      const b3 = getRopeInterpolation(ropePoints, 0.80);
+
+      drawWhiteBead(ctx, b1.x, b1.y, 4.5);
+      drawEyeBead(ctx, b2.x, b2.y, 7.5);
+      drawWhiteBead(ctx, b3.x, b3.y, 4.5);
+    }
+
+    // 2. Draw high-resolution cobalt glass Nazar talisman
     ctx.save();
     ctx.translate(position.x, position.y);
     ctx.rotate(angle);
 
-    const radius = 32;
+    // Soft ambient glass drop shadow
+    ctx.shadowColor = 'rgba(10, 20, 50, 0.28)';
+    ctx.shadowBlur = 8;
+    ctx.shadowOffsetY = 4;
 
-    // --- Hanging Mount & Bead ---
-    // Thread link
-    ctx.beginPath();
-    ctx.moveTo(0, -34);
-    ctx.lineTo(0, -28);
-    ctx.strokeStyle = '#78909c';
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
+    const size = 66;
+    if (nazarImg && nazarImg.naturalWidth > 0) {
+      ctx.drawImage(nazarImg, -size / 2, -size / 2, size, size);
+    } else {
+      // Fallback vector drawing
+      const radius = size / 2;
+      ctx.beginPath();
+      ctx.arc(0, 0, radius, 0, Math.PI * 2);
+      ctx.fillStyle = '#1a237e';
+      ctx.fill();
 
-    // Small decorative bead above the talisman
-    ctx.beginPath();
-    ctx.arc(0, -30, 3, 0, Math.PI * 2);
-    ctx.fillStyle = '#0288d1';
-    ctx.fill();
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 0.8;
-    ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(0, 0, radius * 0.65, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
 
-    // Silver attachment loop
-    ctx.beginPath();
-    ctx.arc(0, -26, 4.5, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(207, 216, 220, 0.9)';
-    ctx.fill();
-    ctx.strokeStyle = '#455a64';
-    ctx.lineWidth = 1.2;
-    ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(0, 0, radius * 0.4, 0, Math.PI * 2);
+      ctx.fillStyle = '#0288d1';
+      ctx.fill();
 
-    // --- Outer Cobalt Blue Glass Ring ---
-    ctx.beginPath();
-    ctx.arc(0, 0, radius, 0, Math.PI * 2);
-    const outerGrad = ctx.createRadialGradient(-6, -8, 4, 0, 0, radius);
-    outerGrad.addColorStop(0, '#1976d2');
-    outerGrad.addColorStop(0.5, '#0d47a1');
-    outerGrad.addColorStop(0.85, '#0a2e6f');
-    outerGrad.addColorStop(1, '#051b44');
-    ctx.fillStyle = outerGrad;
-    ctx.fill();
-
-    // Glass rim glow
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-
-    // --- White Middle Ring ---
-    ctx.beginPath();
-    ctx.arc(0, 0, radius * 0.68, 0, Math.PI * 2);
-    const whiteGrad = ctx.createRadialGradient(-4, -4, 2, 0, 0, radius * 0.68);
-    whiteGrad.addColorStop(0, '#ffffff');
-    whiteGrad.addColorStop(0.8, '#f1f5f9');
-    whiteGrad.addColorStop(1, '#cbd5e1');
-    ctx.fillStyle = whiteGrad;
-    ctx.fill();
-
-    // --- Cyan / Sky Blue Ring ---
-    ctx.beginPath();
-    ctx.arc(0, 0, radius * 0.46, 0, Math.PI * 2);
-    const cyanGrad = ctx.createRadialGradient(-3, -3, 2, 0, 0, radius * 0.46);
-    cyanGrad.addColorStop(0, '#38bdf8');
-    cyanGrad.addColorStop(0.6, '#0284c7');
-    cyanGrad.addColorStop(1, '#0369a1');
-    ctx.fillStyle = cyanGrad;
-    ctx.fill();
-
-    // --- Obsidian Black Center Pupil ---
-    ctx.beginPath();
-    ctx.arc(0, 0, radius * 0.24, 0, Math.PI * 2);
-    ctx.fillStyle = '#020617';
-    ctx.fill();
-
-    // --- Glass Specular Highlights (Authentic Hand-blown 3D effect) ---
-    // Primary glint (curved arc highlight top-left)
-    ctx.beginPath();
-    ctx.ellipse(-10, -12, 10, 5, -Math.PI / 4, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
-    ctx.fill();
-
-    // Secondary sharp white dot (pupil reflection)
-    ctx.beginPath();
-    ctx.arc(-2.5, -2.5, 2.2, 0, Math.PI * 2);
-    ctx.fillStyle = '#ffffff';
-    ctx.fill();
-
-    // Tiny secondary bounce reflection bottom-right
-    ctx.beginPath();
-    ctx.arc(12, 12, 2.5, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
-    ctx.fill();
+      ctx.beginPath();
+      ctx.arc(0, 0, radius * 0.18, 0, Math.PI * 2);
+      ctx.fillStyle = '#111111';
+      ctx.fill();
+    }
 
     ctx.restore();
   },
