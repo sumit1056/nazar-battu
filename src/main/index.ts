@@ -171,6 +171,16 @@ ipcMain.on('settings:save', (_event, update: Partial<AppSettings>) => {
   updateTrayMenu();
 });
 
+// --- Auto-Launch on Windows Login ---
+ipcMain.handle('autolaunch:get', () => {
+  return app.getLoginItemSettings().openAtLogin;
+});
+
+ipcMain.handle('autolaunch:set', (_event, enable: boolean) => {
+  app.setLoginItemSettings({ openAtLogin: enable, openAsHidden: false });
+  return app.getLoginItemSettings().openAtLogin;
+});
+
 // --- Emergency Dev Controls (Escape / Anchor double-click) ---
 ipcMain.on('app:dev-action', (_event, payload: { action: 'toggle' | 'quit' | 'reset' }) => {
   console.log(`[Main] Emergency dev action: ${payload.action}`);
@@ -265,6 +275,14 @@ function updateTrayMenu(): void {
         settings.audioEnabled = item.checked;
         saveSettings({ audioEnabled: item.checked });
         mainWindow?.webContents.send('tray:toggle-audio', { enabled: item.checked });
+      },
+    },
+    {
+      label: 'Start on Windows Login',
+      type: 'checkbox' as const,
+      checked: app.getLoginItemSettings().openAtLogin,
+      click: (item) => {
+        app.setLoginItemSettings({ openAtLogin: item.checked, openAsHidden: false });
       },
     },
     {

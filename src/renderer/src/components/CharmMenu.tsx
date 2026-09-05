@@ -8,7 +8,7 @@
  * - Sound toggle (ON/OFF).
  */
 
-import { useEffect, type JSX } from 'react';
+import { useEffect, useState, type JSX } from 'react';
 import { useStore, type PositionLane } from '../store/useStore';
 import { listCharms } from '../charms';
 
@@ -21,8 +21,18 @@ export function CharmMenu(): JSX.Element | null {
   const setPositionLane = useStore((s) => s.setPositionLane);
   const audioEnabled = useStore((s) => s.audioEnabled);
   const toggleAudio = useStore((s) => s.toggleAudio);
+  const [autoLaunch, setAutoLaunchState] = useState<boolean>(false);
 
   const charms = listCharms();
+
+  // Load auto-launch status when menu opens
+  useEffect(() => {
+    if (isMenuOpen && window.electronAPI?.getAutoLaunch) {
+      window.electronAPI.getAutoLaunch().then((enabled) => {
+        setAutoLaunchState(enabled);
+      });
+    }
+  }, [isMenuOpen]);
 
   // Crucial: Tell Electron main process to LOCK interactive mode while menu is open
   useEffect(() => {
@@ -261,6 +271,38 @@ export function CharmMenu(): JSX.Element | null {
           <span>{audioEnabled ? '🔊 Sound Effects' : '🔇 Muted'}</span>
           <span style={{ fontSize: 11, color: audioEnabled ? '#81c784' : 'rgba(255, 255, 255, 0.4)' }}>
             {audioEnabled ? 'ON' : 'OFF'}
+          </span>
+        </div>
+
+        {/* Auto-Launch with Windows */}
+        <div
+          onClick={async () => {
+            if (window.electronAPI?.setAutoLaunch) {
+              const nextState = !autoLaunch;
+              const updated = await window.electronAPI.setAutoLaunch(nextState);
+              setAutoLaunchState(updated);
+            }
+          }}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '6px 10px',
+            borderRadius: 6,
+            cursor: 'pointer',
+            color: 'rgba(255, 255, 255, 0.85)',
+            marginTop: 2,
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'transparent';
+          }}
+        >
+          <span>🚀 Run on Startup</span>
+          <span style={{ fontSize: 11, color: autoLaunch ? '#81c784' : 'rgba(255, 255, 255, 0.4)' }}>
+            {autoLaunch ? 'ON' : 'OFF'}
           </span>
         </div>
       </div>

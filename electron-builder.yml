@@ -1,0 +1,28 @@
+appId: com.sumit.nazarbattu
+productName: Nazar Battu
+directories:
+  output: dist
+  buildResources: build
+files:
+  - out/**/*
+  - package.json
+win:
+  target:
+    - target: portable
+      arch:
+        - x64
+    - target: nsis
+      arch:
+        - x64
+  executableName: Nazar-Battu
+nsis:
+  oneClick: true
+  perMachine: false
+  allowElevation: false
+  allowToChangeInstallationDirectory: false
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: Nazar Battu
+  artifactName: Nazar-Battu-Setup.exe
+portable:
+  artifactName: Nazar-Battu-Portable.exe

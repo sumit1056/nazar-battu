@@ -45,6 +45,12 @@ export interface ElectronAPI {
   /** Save settings to main process */
   saveSettings: (settings: Partial<{ activeCharmId: string; audioEnabled: boolean; positionLane?: string }>) => void;
 
+  /** Get Windows auto-launch status */
+  getAutoLaunch?: () => Promise<boolean>;
+
+  /** Set Windows auto-launch status */
+  setAutoLaunch?: (enable: boolean) => Promise<boolean>;
+
   /** Emergency dev action (Escape / double click anchor) */
   emergencyDevAction: (action: 'toggle' | 'quit' | 'reset') => void;
 
@@ -95,6 +101,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   saveSettings: (settings: Partial<{ activeCharmId: string; audioEnabled: boolean; positionLane?: string }>): void => {
     ipcRenderer.send('settings:save', settings);
+  },
+
+  // Auto-launch
+  getAutoLaunch: (): Promise<boolean> => {
+    return ipcRenderer.invoke('autolaunch:get');
+  },
+  setAutoLaunch: (enable: boolean): Promise<boolean> => {
+    return ipcRenderer.invoke('autolaunch:set', enable);
   },
 
   // Emergency dev control
