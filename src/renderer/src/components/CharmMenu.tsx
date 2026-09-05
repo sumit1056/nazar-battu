@@ -26,8 +26,10 @@ export function CharmMenu(): JSX.Element | null {
 
   // Crucial: Tell Electron main process to LOCK interactive mode while menu is open
   useEffect(() => {
-    if (window.electronAPI) {
+    if (window.electronAPI?.setMenuOpen) {
       window.electronAPI.setMenuOpen(isMenuOpen);
+    } else if (window.electronAPI?.setInteractive) {
+      window.electronAPI.setInteractive(!isMenuOpen, { forward: true });
     }
   }, [isMenuOpen]);
 

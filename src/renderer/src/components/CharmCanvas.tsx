@@ -27,6 +27,7 @@ export function CharmCanvas(): JSX.Element {
   const audioEnabled = useStore((s) => s.audioEnabled);
   const setInteractionState = useStore((s) => s.setInteractionState);
   const setMenuOpen = useStore((s) => s.setMenuOpen);
+  const isMenuOpen = useStore((s) => s.isMenuOpen);
 
   // Get active charm definition
   const charm = getCharm(activeCharmId);
@@ -177,19 +178,19 @@ export function CharmCanvas(): JSX.Element {
       ropePoints: verlet.pts,
     });
 
-    ctx.restore();
-
-    // Hit-test for IPC toggle
-    checkHitArea(
-      cursorPosRef.current.x,
-      cursorPosRef.current.y,
-      { position: charmPos },
-      charm,
-    );
+    // Hit-test for IPC toggle (bypassed while context menu is open to prevent pass-through click bleed)
+    if (!isMenuOpen) {
+      checkHitArea(
+        cursorPosRef.current.x,
+        cursorPosRef.current.y,
+        { position: charmPos },
+        charm,
+      );
+    }
 
     // Continue loop
     animFrameRef.current = requestAnimationFrame(renderLoop);
-  }, [verletRopeRef, charm, drawRope, stepPhysics, checkHitArea]);
+  }, [verletRopeRef, charm, drawRope, stepPhysics, checkHitArea, isMenuOpen]);
 
   /**
    * Canvas setup: resize to window, handle DPI, start render loop.
