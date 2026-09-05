@@ -31,7 +31,7 @@ interface UseHitTestReturn {
   checkHitArea: (
     cursorX: number,
     cursorY: number,
-    charmBody: Body,
+    charmBody: Body | { position: { x: number; y: number } },
     charm: CharmDefinition,
   ) => boolean;
 
@@ -42,7 +42,7 @@ interface UseHitTestReturn {
   endDrag: (
     cursorX: number,
     cursorY: number,
-    charmBody: Body,
+    charmBody: Body | { position: { x: number; y: number } },
     charm: CharmDefinition,
   ) => boolean;
 
@@ -64,7 +64,7 @@ export function useHitTest(): UseHitTestReturn {
   const isInsideBounds = (
     cursorX: number,
     cursorY: number,
-    charmBody: Body,
+    charmBody: Body | { position: { x: number; y: number } },
     charm: CharmDefinition,
     extraPadding: number = 0,
   ): boolean => {
@@ -88,7 +88,7 @@ export function useHitTest(): UseHitTestReturn {
     (
       cursorX: number,
       cursorY: number,
-      charmBody: Body,
+      charmBody: Body | { position: { x: number; y: number } },
       charm: CharmDefinition,
     ): boolean => {
       const state = stateRef.current;
@@ -137,7 +137,7 @@ export function useHitTest(): UseHitTestReturn {
     (
       cursorX: number,
       cursorY: number,
-      charmBody: Body,
+      charmBody: Body | { position: { x: number; y: number } },
       charm: CharmDefinition,
     ): boolean => {
       const state = stateRef.current;

@@ -1,21 +1,19 @@
 /**
  * Nazar Battu — CharmCanvas Component
  *
- * Full-window canvas that renders the rope chain and charm talisman.
- * Runs a requestAnimationFrame loop syncing Matter.js body positions
- * to canvas drawing calls. Handles hit-testing, breeze forces, and
- * cursor state management.
+ * Full-window canvas that renders the 12-point Verlet rope and charm talisman.
+ * Runs a requestAnimationFrame loop syncing Verlet particle positions
+ * to canvas drawing calls. Handles hit-testing, cursor wind momentum,
+ * and mouse drag/fling interactions.
  *
  * See docs/TRD.md §5 for the rendering pipeline architecture.
  */
 
 import { useRef, useEffect, useCallback, type JSX } from 'react';
-import { Events } from 'matter-js';
 import { usePhysics } from '../hooks/usePhysics';
 import { useHitTest } from '../hooks/useHitTest';
 import { useStore } from '../store/useStore';
 import { getCharm } from '../charms';
-import { getRopePoints } from '../physics/rope';
 import { playChime, playSwish } from '../audio/sounds';
 
 export function CharmCanvas(): JSX.Element {
@@ -29,11 +27,11 @@ export function CharmCanvas(): JSX.Element {
   const audioEnabled = useStore((s) => s.audioEnabled);
   const setInteractionState = useStore((s) => s.setInteractionState);
 
-  // Get charm definition
+  // Get active charm definition
   const charm = getCharm(activeCharmId);
 
-  // Physics engine + rope chain
-  const { engineRef, ropeChainRef, mouseConstraintRef, applyBreeze, resetCharmPosition } = usePhysics({
+  // 12-particle Verlet physics engine
+  const { verletRopeRef, stepPhysics, resetCharmPosition } = usePhysics({
     charmId: activeCharmId,
     canvasRef,
     enabled: isVisible,
@@ -44,20 +42,18 @@ export function CharmCanvas(): JSX.Element {
 
   /**
    * Draw the rope segments with authentic multi-layer cord styling.
-   * Uses braided core, gradient thread tint, and stitched accent dashes.
+   * Renders through all 12 Verlet points with braided core, gradient thread tint,
+   * and stitched accent dashes.
    */
   const drawRope = useCallback(
-    (ctx: CanvasRenderingContext2D) => {
-      const ropeChain = ropeChainRef.current;
-      if (!ropeChain) return;
-
-      const allBodies = [ropeChain.anchor, ...ropeChain.links, ropeChain.charmBody];
+    (ctx: CanvasRenderingContext2D, points: { x: number; y: number }[]) => {
+      if (points.length < 2) return;
 
       const traceRopePath = () => {
         ctx.beginPath();
-        ctx.moveTo(allBodies[0].position.x, allBodies[0].position.y);
-        for (let i = 1; i < allBodies.length; i++) {
-          ctx.lineTo(allBodies[i].position.x, allBodies[i].position.y);
+        ctx.moveTo(points[0].x, points[0].y);
+        for (let i = 1; i < points.length; i++) {
+          ctx.lineTo(points[i].x, points[i].y);
         }
       };
 
@@ -116,18 +112,18 @@ export function CharmCanvas(): JSX.Element {
 
       ctx.restore();
     },
-    [ropeChainRef, activeCharmId],
+    [activeCharmId],
   );
 
   /**
    * Main render loop — requestAnimationFrame.
-   * Clears canvas (transparent), draws rope, draws charm,
-   * and applies breeze force from cursor position.
+   * Advances Verlet physics, clears canvas (transparent), draws braided rope,
+   * draws charm at bottom node, and runs hit-testing.
    */
   const renderLoop = useCallback(() => {
     const canvas = canvasRef.current;
-    const ropeChain = ropeChainRef.current;
-    if (!canvas || !ropeChain || !charm) {
+    const verlet = verletRopeRef.current;
+    if (!canvas || !verlet || !charm) {
       animFrameRef.current = requestAnimationFrame(renderLoop);
       return;
     }
@@ -137,6 +133,9 @@ export function CharmCanvas(): JSX.Element {
 
     const dpr = window.devicePixelRatio || 1;
 
+    // Advance Verlet simulation
+    stepPhysics(1 / 60);
+
     // Clear entire canvas (transparent)
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -144,37 +143,35 @@ export function CharmCanvas(): JSX.Element {
     ctx.save();
     ctx.scale(dpr, dpr);
 
-    // Draw the multi-layer rope cord
-    drawRope(ctx);
+    // Draw the multi-layer rope cord through all 12 Verlet points
+    drawRope(ctx, verlet.pts);
 
-    // Extract current rope node points for articulated talisman rendering
-    const ropePoints = getRopePoints(ropeChain);
+    // Extract current bottom talisman state and tangent angle
+    const charmPos = verlet.end;
+    const charmAngle = verlet.endAngle();
 
-    // Draw the charm synced to physics body
+    // Draw the charm synced to bottom Verlet node
     charm.render({
       ctx,
-      position: ropeChain.charmBody.position,
-      angle: ropeChain.charmBody.angle,
+      position: charmPos,
+      angle: charmAngle,
       dpr,
-      ropePoints,
+      ropePoints: verlet.pts,
     });
 
     ctx.restore();
-
-    // Apply breeze force from cursor (runs every frame in passthrough mode)
-    applyBreeze(cursorPosRef.current);
 
     // Hit-test for IPC toggle
     checkHitArea(
       cursorPosRef.current.x,
       cursorPosRef.current.y,
-      ropeChain.charmBody,
+      { position: charmPos },
       charm,
     );
 
     // Continue loop
     animFrameRef.current = requestAnimationFrame(renderLoop);
-  }, [ropeChainRef, charm, drawRope, applyBreeze, checkHitArea]);
+  }, [verletRopeRef, charm, drawRope, stepPhysics, checkHitArea]);
 
   /**
    * Canvas setup: resize to window, handle DPI, start render loop.
@@ -226,10 +223,7 @@ export function CharmCanvas(): JSX.Element {
   }, []);
 
   /**
-   * Mouse event handlers for hit-testing and drag lifecycle.
-   * mousemove: track cursor position (used by breeze + hit-test in render loop)
-   * mousedown: detect grab on charm body → start drag
-   * mouseup: release drag → fling with accumulated velocity
+   * Mouse event handlers for hit-testing, rope breeze, and drag/fling lifecycle.
    */
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -238,23 +232,26 @@ export function CharmCanvas(): JSX.Element {
     const handleMouseMove = (e: MouseEvent): void => {
       cursorPosRef.current = { x: e.clientX, y: e.clientY };
 
-      // Update cursor style based on hit-test state
       const hitState = getState();
-      if (hitState.isDragging) {
+      const verlet = verletRopeRef.current;
+
+      if (hitState.isDragging && verlet) {
         canvas.style.cursor = 'grabbing';
-      } else if (hitState.isInside) {
-        canvas.style.cursor = 'grab';
-      } else {
-        canvas.style.cursor = 'default';
+        verlet.dragTo(e.clientX, e.clientY);
+      } else if (verlet) {
+        verlet.setMouse(e.clientX, e.clientY);
+        canvas.style.cursor = hitState.isInside ? 'grab' : 'default';
       }
     };
 
-    const handleMouseDown = (_e: MouseEvent): void => {
+    const handleMouseDown = (e: MouseEvent): void => {
       const hitState = getState();
-      if (hitState.isInside && !hitState.isDragging) {
+      const verlet = verletRopeRef.current;
+      if (hitState.isInside && !hitState.isDragging && verlet) {
         startDrag();
         setInteractionState('dragging');
         canvas.style.cursor = 'grabbing';
+        verlet.startDrag(e.clientX, e.clientY);
         if (audioEnabled) {
           playChime(0.25);
         }
@@ -263,16 +260,23 @@ export function CharmCanvas(): JSX.Element {
 
     const handleMouseUp = (e: MouseEvent): void => {
       const hitState = getState();
-      if (hitState.isDragging && ropeChainRef.current && charm) {
-        const body = ropeChainRef.current.charmBody;
-        const speed = Math.hypot(body.velocity.x, body.velocity.y);
-        if (audioEnabled && speed > 2.5) {
+      const verlet = verletRopeRef.current;
+      if (hitState.isDragging && verlet && charm) {
+        const releaseVx = verlet.mVX;
+        const releaseVy = verlet.mVY;
+        const speed = Math.hypot(releaseVx, releaseVy);
+
+        // End drag with momentum fling transfer
+        verlet.endDrag(releaseVx, releaseVy);
+
+        if (audioEnabled && speed > 2.0) {
           playSwish(speed, 0.2);
         }
+
         const isInside = endDrag(
           e.clientX,
           e.clientY,
-          body,
+          { position: verlet.end },
           charm,
         );
         setInteractionState(isInside ? 'interactive' : 'passthrough');
@@ -300,7 +304,7 @@ export function CharmCanvas(): JSX.Element {
       canvas.removeEventListener('mouseup', handleMouseUp);
       canvas.removeEventListener('dblclick', handleDoubleClick);
     };
-  }, [isVisible, charm, audioEnabled, startDrag, endDrag, getState, setInteractionState, ropeChainRef, resetCharmPosition]);
+  }, [isVisible, charm, audioEnabled, startDrag, endDrag, getState, setInteractionState, verletRopeRef, resetCharmPosition]);
 
   /**
    * Listen for tray reset-position command to re-center the charm.
@@ -315,50 +319,5 @@ export function CharmCanvas(): JSX.Element {
     };
   }, [resetCharmPosition]);
 
-  /**
-   * Listen for MouseConstraint events from Matter.js
-   * to detect when the physics engine grabs/releases the body.
-   */
-  useEffect(() => {
-    const mc = mouseConstraintRef.current;
-    const engine = engineRef.current;
-    if (!mc || !engine) return;
-
-    const onStartDrag = (): void => {
-      const hitState = getState();
-      if (!hitState.isDragging) {
-        startDrag();
-        setInteractionState('dragging');
-      }
-    };
-
-    const onEndDrag = (): void => {
-      // The mouseup handler will resolve the final state
-    };
-
-    Events.on(mc, 'startdrag', onStartDrag);
-    Events.on(mc, 'enddrag', onEndDrag);
-
-    return () => {
-      Events.off(mc, 'startdrag', onStartDrag);
-      Events.off(mc, 'enddrag', onEndDrag);
-    };
-  }, [mouseConstraintRef.current, engineRef.current, startDrag, getState, setInteractionState]);
-
-  if (!isVisible) return <></>;
-
-  return (
-    <canvas
-      ref={canvasRef}
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        width: '100vw',
-        height: '100vh',
-        background: 'transparent',
-        pointerEvents: 'auto',
-      }}
-    />
-  );
+  return <canvas ref={canvasRef} id="charm-canvas" />;
 }
