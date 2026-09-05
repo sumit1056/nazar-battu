@@ -8,12 +8,13 @@
 import { useEffect, type JSX } from 'react';
 import { CharmCanvas } from './components/CharmCanvas';
 import { CharmMenu } from './components/CharmMenu';
-import { useStore } from './store/useStore';
+import { useStore, type PositionLane } from './store/useStore';
 
 export default function App(): JSX.Element {
   const toggleVisibility = useStore((s) => s.toggleVisibility);
   const setActiveCharm = useStore((s) => s.setActiveCharm);
   const setAudioEnabled = useStore((s) => s.setAudioEnabled);
+  const setPositionLane = useStore((s) => s.setPositionLane);
 
   // Sync settings and listen for tray commands from the main process
   useEffect(() => {
@@ -24,6 +25,7 @@ export default function App(): JSX.Element {
       if (settings) {
         if (settings.activeCharmId) setActiveCharm(settings.activeCharmId);
         if (settings.audioEnabled !== undefined) setAudioEnabled(settings.audioEnabled);
+        if (settings.positionLane) setPositionLane(settings.positionLane as PositionLane);
       }
     }).catch(() => {});
 
@@ -35,6 +37,10 @@ export default function App(): JSX.Element {
       setActiveCharm(charmId);
     });
 
+    window.electronAPI.onChangeLane?.((lane: string) => {
+      setPositionLane(lane as PositionLane);
+    });
+
     window.electronAPI.onToggleAudio?.((enabled: boolean) => {
       setAudioEnabled(enabled);
     });
@@ -42,9 +48,10 @@ export default function App(): JSX.Element {
     return () => {
       window.electronAPI.removeAllListeners('tray:toggle-visibility');
       window.electronAPI.removeAllListeners('tray:change-charm');
+      window.electronAPI.removeAllListeners('tray:change-lane');
       window.electronAPI.removeAllListeners('tray:toggle-audio');
     };
-  }, [toggleVisibility, setActiveCharm, setAudioEnabled]);
+  }, [toggleVisibility, setActiveCharm, setAudioEnabled, setPositionLane]);
 
   return (
     <>

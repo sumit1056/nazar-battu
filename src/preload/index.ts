@@ -15,6 +15,9 @@ export interface ElectronAPI {
   /** Toggle mouse pass-through on the main window */
   setInteractive: (ignore: boolean, options?: { forward: boolean }) => void;
 
+  /** Lock interactive state while context menu is open */
+  setMenuOpen: (open: boolean) => void;
+
   /** Notify main process that a drag operation has started */
   notifyDragStart: () => void;
 
@@ -27,6 +30,9 @@ export interface ElectronAPI {
   /** Listen for tray change-charm events */
   onChangeCharm: (callback: (charmId: string) => void) => void;
 
+  /** Listen for tray change-lane events (Left/Center/Right) */
+  onChangeLane: (callback: (lane: string) => void) => void;
+
   /** Listen for tray reset-position events */
   onResetPosition: (callback: () => void) => void;
 
@@ -34,10 +40,10 @@ export interface ElectronAPI {
   onToggleAudio: (callback: (enabled: boolean) => void) => void;
 
   /** Retrieve persisted settings from main process */
-  getSettings: () => Promise<{ activeCharmId: string; audioEnabled: boolean }>;
+  getSettings: () => Promise<{ activeCharmId: string; audioEnabled: boolean; positionLane?: string }>;
 
   /** Save settings to main process */
-  saveSettings: (settings: Partial<{ activeCharmId: string; audioEnabled: boolean }>) => void;
+  saveSettings: (settings: Partial<{ activeCharmId: string; audioEnabled: boolean; positionLane?: string }>) => void;
 
   /** Emergency dev action (Escape / double click anchor) */
   emergencyDevAction: (action: 'toggle' | 'quit' | 'reset') => void;
@@ -51,6 +57,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Renderer → Main: toggle mouse pass-through
   setInteractive: (ignore: boolean, options?: { forward: boolean }): void => {
     ipcRenderer.send('charm:set-interactive', { ignore, ...options });
+  },
+
+  // Renderer → Main: lock interactive state while floating menu is open
+  setMenuOpen: (open: boolean): void => {
+    ipcRenderer.send('menu:set-open', open);
   },
 
   // Renderer → Main: drag lifecycle notifications
@@ -68,6 +79,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onChangeCharm: (callback: (charmId: string) => void): void => {
     ipcRenderer.on('tray:change-charm', (_e, data: { charmId: string }) => callback(data.charmId));
   },
+  onChangeLane: (callback: (lane: string) => void): void => {
+    ipcRenderer.on('tray:change-lane', (_e, data: { lane: string }) => callback(data.lane));
+  },
   onResetPosition: (callback: () => void): void => {
     ipcRenderer.on('tray:reset-position', () => callback());
   },
@@ -76,10 +90,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   // Settings
-  getSettings: (): Promise<{ activeCharmId: string; audioEnabled: boolean }> => {
+  getSettings: (): Promise<{ activeCharmId: string; audioEnabled: boolean; positionLane?: string }> => {
     return ipcRenderer.invoke('settings:get');
   },
-  saveSettings: (settings: Partial<{ activeCharmId: string; audioEnabled: boolean }>): void => {
+  saveSettings: (settings: Partial<{ activeCharmId: string; audioEnabled: boolean; positionLane?: string }>): void => {
     ipcRenderer.send('settings:save', settings);
   },
 

@@ -1,89 +1,57 @@
 /**
- * Nazar Battu — Electron Main Process
+ * Nazar Battu — Main Process
  *
- * Creates a transparent, frameless, always-on-top BrowserWindow covering the
- * entire primary display work area. Default state: click-through with forwarded
- * mouse events so the renderer can hit-test while OS clicks pass through.
+ * Manages the frameless, transparent, always-on-top desktop overlay window.
+ * Handles the 3-state mouse-event pass-through loop, system tray integration,
+ * dynamic multi-talisman selector, and persistent settings.
  *
- * Architecture: 3-state IPC mouse-event loop (PASSTHROUGH → INTERACTIVE → DRAGGING)
- * See docs/TRD.md §3 for full state machine documentation.
+ * See docs/TRD.md §3 for the full architecture specification.
  */
 
-import { app, BrowserWindow, screen, ipcMain, Tray, Menu, nativeImage } from 'electron';
+import { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 
-// --- Global references (prevent GC) ---
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isDragging = false;
+let isMenuOpen = false;
+
+// --- Window Lifecycle ---
 
 function createWindow(): void {
   const primaryDisplay = screen.getPrimaryDisplay();
-  const { workArea } = primaryDisplay;
+  const { width, height } = primaryDisplay.workAreaSize;
 
   mainWindow = new BrowserWindow({
-    // Geometry: cover entire primary display work area
-    x: workArea.x,
-    y: workArea.y,
-    width: workArea.width,
-    height: workArea.height,
-
-    // Transparency & frameless — no visible chrome, per-pixel alpha
+    width,
+    height,
+    x: 0,
+    y: 0,
     transparent: true,
     frame: false,
-    hasShadow: false,
-
-    // Z-order & taskbar — float above everything, invisible in alt-tab
     alwaysOnTop: true,
     skipTaskbar: true,
-    focusable: false,
-
-    // Prevent resize/move by user
+    hasShadow: false,
     resizable: false,
     movable: false,
-    minimizable: false,
-    maximizable: false,
-    fullscreenable: false,
-
-    // Security — strict isolation, no Node in renderer
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
+      sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true,
     },
   });
 
-  // Default state: click-through with forwarded mouse events
-  // forward: true → renderer still receives mousemove for hit-testing
+  mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  mainWindow.setAlwaysOnTop(true, 'screen-saver');
+
+  // Initial state: passthrough mode (ignore clicks, forward cursor movements)
   mainWindow.setIgnoreMouseEvents(true, { forward: true });
 
-  // Highest z-level to float above windows
-  if (process.platform === 'darwin') {
-    mainWindow.setAlwaysOnTop(true, 'screen-saver');
-    mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-  } else {
-    mainWindow.setAlwaysOnTop(true);
-  }
-
-  // Diagnostics: forward renderer logs and load status
-  mainWindow.webContents.on('console-message', (_event, level, message, line, sourceId) => {
-    console.log(`[Renderer L${level}] ${message} (${sourceId}:${line})`);
-  });
-  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
-    console.error(`[Renderer Load Error ${errorCode}] ${errorDescription} (${validatedURL})`);
-  });
-  mainWindow.webContents.on('dom-ready', () => {
-    console.log('[Renderer] DOM ready');
-  });
-
-  // Load the renderer
   if (process.env.ELECTRON_RENDERER_URL) {
-    console.log(`[Main] Loading dev renderer: ${process.env.ELECTRON_RENDERER_URL}`);
     mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
   } else {
-    console.log('[Main] Loading production renderer file');
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
   }
 
@@ -99,7 +67,7 @@ function createWindow(): void {
  * Called by renderer when cursor enters/leaves charm hit-area.
  */
 ipcMain.on('charm:set-interactive', (_event, payload: { ignore: boolean; forward?: boolean }) => {
-  if (!mainWindow || isDragging) return;
+  if (!mainWindow || isDragging || isMenuOpen) return;
 
   if (payload.ignore) {
     mainWindow.setIgnoreMouseEvents(true, { forward: payload.forward ?? true });
@@ -109,8 +77,20 @@ ipcMain.on('charm:set-interactive', (_event, payload: { ignore: boolean; forward
 });
 
 /**
+ * Lock interactive state while floating menu is open.
+ */
+ipcMain.on('menu:set-open', (_event, open: boolean) => {
+  isMenuOpen = open;
+  if (!mainWindow) return;
+  if (open) {
+    mainWindow.setIgnoreMouseEvents(false);
+  } else {
+    mainWindow.setIgnoreMouseEvents(true, { forward: true });
+  }
+});
+
+/**
  * Lock interactive state during drag operations.
- * Prevents accidental pass-through toggle while user is dragging the charm.
  */
 ipcMain.on('charm:drag-start', () => {
   isDragging = true;
@@ -121,11 +101,15 @@ ipcMain.on('charm:drag-start', () => {
 
 /**
  * Unlock drag state and resolve next mouse-event state.
- * If cursor is still in hit-area → stay interactive; otherwise → pass-through.
  */
 ipcMain.on('charm:drag-end', (_event, payload: { cursorInHitArea: boolean }) => {
   isDragging = false;
   if (!mainWindow) return;
+
+  if (isMenuOpen) {
+    mainWindow.setIgnoreMouseEvents(false);
+    return;
+  }
 
   if (!payload.cursorInHitArea) {
     mainWindow.setIgnoreMouseEvents(true, { forward: true });
@@ -135,11 +119,13 @@ ipcMain.on('charm:drag-end', (_event, payload: { cursorInHitArea: boolean }) => 
 interface AppSettings {
   activeCharmId: string;
   audioEnabled: boolean;
+  positionLane: 'left' | 'center' | 'right';
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
   activeCharmId: 'nimbu-mirchi',
   audioEnabled: true,
+  positionLane: 'right', // Right as default!
 };
 
 function getSettingsPath(): string {
@@ -219,6 +205,68 @@ function updateTrayMenu(): void {
       enabled: false,
     },
     { type: 'separator' },
+    // Directly accessible talisman selection!
+    ...charms.map((c) => ({
+      label: c.label,
+      type: 'radio' as const,
+      checked: settings.activeCharmId === c.id,
+      click: () => {
+        settings.activeCharmId = c.id;
+        saveSettings({ activeCharmId: c.id });
+        mainWindow?.webContents.send('tray:change-charm', { charmId: c.id });
+        updateTrayMenu();
+      },
+    })),
+    { type: 'separator' },
+    // Screen Position Lane
+    {
+      label: 'Screen Position',
+      submenu: [
+        {
+          label: '⬅️ Left',
+          type: 'radio' as const,
+          checked: settings.positionLane === 'left',
+          click: () => {
+            settings.positionLane = 'left';
+            saveSettings({ positionLane: 'left' });
+            mainWindow?.webContents.send('tray:change-lane', { lane: 'left' });
+            updateTrayMenu();
+          },
+        },
+        {
+          label: '⏺️ Center',
+          type: 'radio' as const,
+          checked: settings.positionLane === 'center',
+          click: () => {
+            settings.positionLane = 'center';
+            saveSettings({ positionLane: 'center' });
+            mainWindow?.webContents.send('tray:change-lane', { lane: 'center' });
+            updateTrayMenu();
+          },
+        },
+        {
+          label: '➡️ Right (Default)',
+          type: 'radio' as const,
+          checked: settings.positionLane === 'right',
+          click: () => {
+            settings.positionLane = 'right';
+            saveSettings({ positionLane: 'right' });
+            mainWindow?.webContents.send('tray:change-lane', { lane: 'right' });
+            updateTrayMenu();
+          },
+        },
+      ],
+    },
+    {
+      label: 'Sound Effects',
+      type: 'checkbox' as const,
+      checked: settings.audioEnabled,
+      click: (item) => {
+        settings.audioEnabled = item.checked;
+        saveSettings({ audioEnabled: item.checked });
+        mainWindow?.webContents.send('tray:toggle-audio', { enabled: item.checked });
+      },
+    },
     {
       label: 'Show / Hide Charm',
       click: () => {
@@ -229,31 +277,6 @@ function updateTrayMenu(): void {
       label: 'Reset Position to Center',
       click: () => {
         mainWindow?.webContents.send('tray:reset-position');
-      },
-    },
-    { type: 'separator' },
-    {
-      label: 'Select Charm',
-      submenu: charms.map((c) => ({
-        label: c.label,
-        type: 'radio' as const,
-        checked: settings.activeCharmId === c.id,
-        click: () => {
-          settings.activeCharmId = c.id;
-          saveSettings({ activeCharmId: c.id });
-          mainWindow?.webContents.send('tray:change-charm', { charmId: c.id });
-          updateTrayMenu();
-        },
-      })),
-    },
-    {
-      label: 'Sound Effects',
-      type: 'checkbox' as const,
-      checked: settings.audioEnabled,
-      click: (item) => {
-        settings.audioEnabled = item.checked;
-        saveSettings({ audioEnabled: item.checked });
-        mainWindow?.webContents.send('tray:toggle-audio', { enabled: item.checked });
       },
     },
     { type: 'separator' },
@@ -269,56 +292,56 @@ function updateTrayMenu(): void {
 }
 
 function createTray(): void {
-  // Generate 16x16 Nazar Battu talisman icon buffer for system tray
+  // Generate a crisp 16x16 icon programmatically
   const size = 16;
-  const buffer = Buffer.alloc(size * size * 4);
-  const center = size / 2;
+  const iconBuffer = Buffer.alloc(size * size * 4);
+
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       const idx = (y * size + x) * 4;
-      const dx = x - center;
-      const dy = y - center;
-      const distSq = dx * dx + dy * dy;
-      if (distSq <= 49) {
-        if (distSq <= 4) {
-          // Pupil (dark blue/black)
-          buffer[idx] = 15;
-          buffer[idx + 1] = 23;
-          buffer[idx + 2] = 42;
-          buffer[idx + 3] = 255;
-        } else if (distSq <= 16) {
-          // Iris (cyan/turquoise)
-          buffer[idx] = 14;
-          buffer[idx + 1] = 165;
-          buffer[idx + 2] = 233;
-          buffer[idx + 3] = 255;
-        } else if (distSq <= 32) {
-          // Sclera (white ring)
-          buffer[idx] = 248;
-          buffer[idx + 1] = 250;
-          buffer[idx + 2] = 252;
-          buffer[idx + 3] = 255;
-        } else {
-          // Deep blue outer ring
-          buffer[idx] = 30;
-          buffer[idx + 1] = 58;
-          buffer[idx + 2] = 138;
-          buffer[idx + 3] = 255;
-        }
+      const dx = x - size / 2 + 0.5;
+      const dy = y - size / 2 + 0.5;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (dist <= 7) {
+        // Deep blue outer rim
+        iconBuffer[idx] = 0x1a;
+        iconBuffer[idx + 1] = 0x23;
+        iconBuffer[idx + 2] = 0x7e;
+        iconBuffer[idx + 3] = 0xff;
+      }
+      if (dist <= 4.5) {
+        // White ring
+        iconBuffer[idx] = 0xff;
+        iconBuffer[idx + 1] = 0xff;
+        iconBuffer[idx + 2] = 0xff;
+        iconBuffer[idx + 3] = 0xff;
+      }
+      if (dist <= 2.8) {
+        // Turquoise iris
+        iconBuffer[idx] = 0x02;
+        iconBuffer[idx + 1] = 0x88;
+        iconBuffer[idx + 2] = 0xd1;
+        iconBuffer[idx + 3] = 0xff;
+      }
+      if (dist <= 1.2) {
+        // Black pupil
+        iconBuffer[idx] = 0x11;
+        iconBuffer[idx + 1] = 0x11;
+        iconBuffer[idx + 2] = 0x11;
+        iconBuffer[idx + 3] = 0xff;
       }
     }
   }
 
-  const icon = nativeImage.createFromBuffer(buffer, { width: size, height: size });
-  tray = new Tray(icon);
-  tray.setToolTip('Nazar Battu — Desktop Charm');
-
-  updateTrayMenu();
-
-  // Double-click tray icon → toggle visibility
-  tray.on('double-click', () => {
-    mainWindow?.webContents.send('tray:toggle-visibility');
+  const icon = nativeImage.createFromBuffer(iconBuffer, {
+    width: size,
+    height: size,
   });
+
+  tray = new Tray(icon);
+  tray.setToolTip('Nazar Battu — Desktop Talisman');
+  updateTrayMenu();
 }
 
 // --- App Lifecycle ---
@@ -327,14 +350,16 @@ app.whenReady().then(() => {
   settings = loadSettings();
   createWindow();
   createTray();
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow();
+    }
+  });
 });
 
 app.on('window-all-closed', () => {
-  app.quit();
-});
-
-app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow();
+  if (process.platform !== 'darwin') {
+    app.quit();
   }
 });
