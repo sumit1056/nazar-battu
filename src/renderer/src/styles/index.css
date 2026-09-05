@@ -1,0 +1,47 @@
+/* Tailwind CSS import deferred — app is canvas-based; add back for tray toggle UI */
+
+/*
+ * Nazar Battu — Global Styles
+ *
+ * Critical: html/body MUST be fully transparent with no background.
+ * The Electron window is transparent + frameless; any visible background
+ * here would break the click-through illusion.
+ */
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent !important;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-app-region: no-drag;
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+}
+
+/* Hide all scrollbars */
+::-webkit-scrollbar {
+  display: none;
+}
+
+/* Canvas fills the entire window — transparent background */
+canvas {
+  display: block;
+  background: transparent;
+}
+
+/* Cursor states for charm interaction */
+.cursor-grab {
+  cursor: grab;
+}
+.cursor-grabbing {
+  cursor: grabbing;
+}
