@@ -155,7 +155,8 @@ export function CharmCanvas(): JSX.Element {
     // Advance Verlet simulation
     stepPhysics(1 / 60);
 
-    // Clear entire canvas (transparent)
+    // Reset transform to identity and clear entire canvas (transparent)
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     // Scale for HiDPI
@@ -177,6 +178,10 @@ export function CharmCanvas(): JSX.Element {
       dpr,
       ropePoints: verlet.pts,
     });
+
+    // CRITICAL: restore canvas transform state to prevent scale(dpr, dpr)
+    // from multiplying exponentially every frame on HiDPI/laptop displays (dpr > 1)
+    ctx.restore();
 
     // Hit-test for IPC toggle (bypassed while context menu is open to prevent pass-through click bleed)
     if (!isMenuOpen) {
