@@ -12,6 +12,12 @@ import { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage } from 'el
 import path from 'node:path';
 import fs from 'node:fs';
 
+function debugLog(...args: unknown[]): void {
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[Nazar]', ...args);
+  }
+}
+
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isDragging = false;
@@ -35,22 +41,23 @@ function createWindow(): void {
     hasShadow: false,
     resizable: false,
     movable: false,
-    show: false, // Show after ready-to-show to let DWM commit the surface
+    show: true,
     backgroundColor: '#00000000', // Explicit ARGB alpha for Chromium compositor
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
+      backgroundThrottling: false, // Critical: prevent Chromium from pausing canvas/Verlet loop when unfocused
     },
   });
 
+  mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   if (process.platform === 'darwin') {
-    mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     mainWindow.setAlwaysOnTop(true, 'floating');
   } else {
-    // Standard always-on-top for Windows (screen-saver is suppressed by Windows DWM)
-    mainWindow.setAlwaysOnTop(true);
+    // Highest Z-order level so Windows DWM never drops it behind other windows
+    mainWindow.setAlwaysOnTop(true, 'screen-saver');
   }
 
   // Initial state: passthrough mode (ignore clicks, forward cursor movements)
@@ -62,18 +69,26 @@ function createWindow(): void {
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
   }
 
+  mainWindow.webContents.on('did-finish-load', () => {
+    debugLog('mainWindow did-finish-load');
+  });
+
+  mainWindow.webContents.on('did-fail-load', (_e, code, desc) => {
+    debugLog(`mainWindow did-fail-load code=${code} desc=${desc}`);
+  });
+
   mainWindow.once('ready-to-show', () => {
+    debugLog('mainWindow ready-to-show fired');
     if (!mainWindow) return;
     mainWindow.show();
-    // Force DWM to commit the transparent surface on Windows
     if (process.platform === 'win32') {
-      mainWindow.setOpacity(1);
-      mainWindow.setAlwaysOnTop(true);
+      mainWindow.setAlwaysOnTop(true, 'screen-saver');
     }
   });
 
   // Auto-recover from GPU/renderer crashes (common on integrated GPUs with transparent windows)
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    debugLog('[Main] Renderer process gone: ' + details.reason);
     console.error('[Main] Renderer process gone:', details.reason);
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.reload();
@@ -81,16 +96,34 @@ function createWindow(): void {
   });
 
   mainWindow.webContents.on('unresponsive', () => {
+    debugLog('[Main] Renderer unresponsive');
     console.error('[Main] Renderer unresponsive, reloading...');
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.reload();
     }
   });
 
+  mainWindow.on('close', () => {
+    debugLog('[Main] mainWindow close event fired! Stack: ' + new Error().stack);
+    console.log('[Main] mainWindow close event fired! Stack:', new Error().stack);
+  });
+
   mainWindow.on('closed', () => {
+    debugLog('[Main] mainWindow closed');
+    console.log('[Main] mainWindow closed');
     mainWindow = null;
   });
 }
+
+process.on('uncaughtException', (err) => {
+  debugLog('[Main] Uncaught Exception: ' + (err?.stack || err));
+  console.error('[Main] Uncaught Exception:', err);
+});
+
+process.on('unhandledRejection', (reason) => {
+  debugLog('[Main] Unhandled Rejection: ' + reason);
+  console.error('[Main] Unhandled Rejection:', reason);
+});
 
 // --- IPC Handlers for the 3-state mouse-event loop ---
 
@@ -396,13 +429,6 @@ function createTray(): void {
 
 // --- App Lifecycle ---
 
-// Critical GPU flags for reliable transparent windows on Windows
-// disable-gpu-compositing: forces software compositing so DWM doesn't drop the
-// transparent surface after initial render (root cause of "shows for 2s then vanishes")
-// on systems with Intel/AMD integrated GPUs or older drivers.
-if (process.platform === 'win32') {
-  app.commandLine.appendSwitch('disable-gpu-compositing');
-}
 // For Linux/GTK transparent windows
 if (process.platform === 'linux') {
   app.commandLine.appendSwitch('enable-transparent-visuals');
@@ -410,41 +436,58 @@ if (process.platform === 'linux') {
 }
 
 const gotTheLock = app.requestSingleInstanceLock();
+debugLog('Single instance lock acquired: ' + gotTheLock);
 
 if (!gotTheLock) {
+  debugLog('Did not get single instance lock, quitting immediately');
   app.quit();
 } else {
   app.on('second-instance', () => {
+    debugLog('second-instance triggered');
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.show();
-      mainWindow.setAlwaysOnTop(true);
+      const topLevel = process.platform === 'darwin' ? 'floating' : 'screen-saver';
+      mainWindow.setAlwaysOnTop(true, topLevel);
     }
   });
 
   app.whenReady().then(() => {
+    debugLog('app.whenReady fired');
     settings = loadSettings();
     createWindow();
     createTray();
 
-    // Windows DWM keep-alive: periodically re-assert the transparent surface
-    // to prevent DWM from dropping it after focus changes or power events.
+    // Windows DWM keep-alive: periodically re-assert top-level Z-order
     if (process.platform === 'win32') {
       setInterval(() => {
         if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) {
-          mainWindow.setAlwaysOnTop(true);
+          mainWindow.setAlwaysOnTop(true, 'screen-saver');
         }
       }, 5000);
     }
 
     app.on('activate', () => {
+      debugLog('app.on activate');
       if (BrowserWindow.getAllWindows().length === 0) {
         createWindow();
       }
     });
   });
 
+  app.on('before-quit', (e) => {
+    debugLog('[Main] app before-quit fired! defaultPrevented: ' + e.defaultPrevented + ' Stack: ' + new Error().stack);
+    console.log('[Main] app before-quit fired! defaultPrevented:', e.defaultPrevented, 'Stack:', new Error().stack);
+  });
+
+  app.on('will-quit', () => {
+    debugLog('[Main] app will-quit fired!');
+    console.log('[Main] app will-quit fired!');
+  });
+
   app.on('window-all-closed', () => {
+    debugLog('[Main] app window-all-closed fired!');
+    console.log('[Main] app window-all-closed fired!');
     if (process.platform !== 'darwin') {
       app.quit();
     }
