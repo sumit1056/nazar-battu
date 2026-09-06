@@ -35,7 +35,8 @@ function createWindow(): void {
     hasShadow: false,
     resizable: false,
     movable: false,
-    show: true,
+    show: false, // Show after ready-to-show to let DWM commit the surface
+    backgroundColor: '#00000000', // Explicit ARGB alpha for Chromium compositor
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       sandbox: true,
@@ -62,7 +63,28 @@ function createWindow(): void {
   }
 
   mainWindow.once('ready-to-show', () => {
-    mainWindow?.show();
+    if (!mainWindow) return;
+    mainWindow.show();
+    // Force DWM to commit the transparent surface on Windows
+    if (process.platform === 'win32') {
+      mainWindow.setOpacity(1);
+      mainWindow.setAlwaysOnTop(true);
+    }
+  });
+
+  // Auto-recover from GPU/renderer crashes (common on integrated GPUs with transparent windows)
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    console.error('[Main] Renderer process gone:', details.reason);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.reload();
+    }
+  });
+
+  mainWindow.webContents.on('unresponsive', () => {
+    console.error('[Main] Renderer unresponsive, reloading...');
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.reload();
+    }
   });
 
   mainWindow.on('closed', () => {
@@ -374,8 +396,17 @@ function createTray(): void {
 
 // --- App Lifecycle ---
 
+// Critical GPU flags for reliable transparent windows on Windows
+// disable-gpu-compositing: forces software compositing so DWM doesn't drop the
+// transparent surface after initial render (root cause of "shows for 2s then vanishes")
+// on systems with Intel/AMD integrated GPUs or older drivers.
 if (process.platform === 'win32') {
+  app.commandLine.appendSwitch('disable-gpu-compositing');
+}
+// For Linux/GTK transparent windows
+if (process.platform === 'linux') {
   app.commandLine.appendSwitch('enable-transparent-visuals');
+  app.commandLine.appendSwitch('disable-gpu');
 }
 
 const gotTheLock = app.requestSingleInstanceLock();
@@ -395,6 +426,16 @@ if (!gotTheLock) {
     settings = loadSettings();
     createWindow();
     createTray();
+
+    // Windows DWM keep-alive: periodically re-assert the transparent surface
+    // to prevent DWM from dropping it after focus changes or power events.
+    if (process.platform === 'win32') {
+      setInterval(() => {
+        if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) {
+          mainWindow.setAlwaysOnTop(true);
+        }
+      }, 5000);
+    }
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {
