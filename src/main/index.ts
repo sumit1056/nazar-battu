@@ -21,13 +21,13 @@ let isMenuOpen = false;
 
 function createWindow(): void {
   const primaryDisplay = screen.getPrimaryDisplay();
-  const { width, height } = primaryDisplay.workAreaSize;
+  const { x, y, width, height } = primaryDisplay.bounds;
 
   mainWindow = new BrowserWindow({
     width,
     height,
-    x: 0,
-    y: 0,
+    x,
+    y,
     transparent: true,
     frame: false,
     alwaysOnTop: true,
@@ -35,6 +35,7 @@ function createWindow(): void {
     hasShadow: false,
     resizable: false,
     movable: false,
+    show: true,
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       sandbox: true,
@@ -43,8 +44,13 @@ function createWindow(): void {
     },
   });
 
-  mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-  mainWindow.setAlwaysOnTop(true, 'screen-saver');
+  if (process.platform === 'darwin') {
+    mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    mainWindow.setAlwaysOnTop(true, 'floating');
+  } else {
+    // Standard always-on-top for Windows (screen-saver is suppressed by Windows DWM)
+    mainWindow.setAlwaysOnTop(true);
+  }
 
   // Initial state: passthrough mode (ignore clicks, forward cursor movements)
   mainWindow.setIgnoreMouseEvents(true, { forward: true });
@@ -54,6 +60,10 @@ function createWindow(): void {
   } else {
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
   }
+
+  mainWindow.once('ready-to-show', () => {
+    mainWindow?.show();
+  });
 
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -363,6 +373,10 @@ function createTray(): void {
 }
 
 // --- App Lifecycle ---
+
+if (process.platform === 'win32') {
+  app.commandLine.appendSwitch('enable-transparent-visuals');
+}
 
 app.whenReady().then(() => {
   settings = loadSettings();
